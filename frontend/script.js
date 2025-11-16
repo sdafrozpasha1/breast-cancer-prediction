@@ -1,4 +1,5 @@
-const API_URL = 'http://localhost:5000/api';
+const API_URL = 'https://breast-cancer-prediction-z4zt.onrender.com/api';
+
 let currentUser = null;
 
 // Page Navigation
@@ -383,3 +384,4 @@ async function loadDashboard() {
         console.error('Error loading dashboard:', error);
     }
 }
+

@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Breast Cancer Prediction System</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- Login Page -->
+    <div id="loginPage" class="page active">
+        <div class="auth-container">
+            <div class="auth-box">
+                <h1>Breast Cancer Prediction System</h1>
+                <h2>Login</h2>
+                <form id="loginForm">
+                    <input type="email" id="loginEmail" placeholder="Email" required>
+                    <input type="password" id="loginPassword" placeholder="Password" required>
+                    <button type="submit">Login</button>
+                </form>
+                <p>Don't have an account? <a href="#" id="showRegister">Register</a></p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Register Page -->
+    <div id="registerPage" class="page">
+        <div class="auth-container">
+            <div class="auth-box">
+                <h1>Breast Cancer Prediction System</h1>
+                <h2>Register</h2>
+                <form id="registerForm">
+                    <input type="text" id="registerName" placeholder="Full Name" required>
+                    <input type="email" id="registerEmail" placeholder="Email" required>
+                    <input type="password" id="registerPassword" placeholder="Password" required>
+                    <button type="submit">Register</button>
+                </form>
+                <p>Already have an account? <a href="#" id="showLogin">Login</a></p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Dashboard -->
+    <div id="dashboardPage" class="page">
+        <nav class="navbar">
+            <div class="nav-brand">Breast Cancer Prediction</div>
+            <div class="nav-user">
+                <span id="userName"></span>
+                <button id="logoutBtn">Logout</button>
+            </div>
+        </nav>
+
+        <div class="sidebar">
+            <a href="#" class="nav-item active" data-page="dashboard">Dashboard</a>
+            <a href="#" class="nav-item" data-page="newPrediction">New Prediction</a>
+            <a href="#" class="nav-item" data-page="aiAssistance">AI Assistance</a>
+            <a href="#" class="nav-item" data-page="educational">Educational Resources</a>
+            <a href="#" class="nav-item" data-page="history">Prediction History</a>
+        </div>
+
+        <div class="main-content">
+            <!-- Dashboard Content -->
+            <div id="dashboardContent" class="content-section active">
+                <h2>Dashboard</h2>
+                <div class="dashboard-cards">
+                    <div class="card">
+                        <h3>Total Predictions</h3>
+                        <p class="stat" id="totalPredictions">0</p>
+                    </div>
+                    <div class="card">
+                        <h3>Last Prediction</h3>
+                        <p class="stat" id="lastPrediction">None</p>
+                    </div>
+                    <div class="card">
+                        <h3>Quick Actions</h3>
+                        <button class="btn-primary" onclick="showPage('newPrediction')">New Prediction</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- New Prediction Content -->
+            <div id="newPredictionContent" class="content-section">
+                <h2>New Prediction</h2>
+                <div class="prediction-tabs">
+                    <button class="tab-btn active" data-tab="symptomBased">Symptom Based</button>
+                    <button class="tab-btn" data-tab="technical">Technical (Medical)</button>
+                </div>
+
+                <!-- Symptom Based Form -->
+                <div id="symptomBasedTab" class="tab-content active">
+                    <form id="symptomForm">
+                        <h3>Personal Information</h3>
+                        <div class="form-group">
+                            <label>Age:</label>
+                            <input type="number" name="age" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Gender:</label>
+                            <select name="gender">
+                                <option value="female">Female</option>
+                                <option value="male">Male</option>
+                            </select>
+                        </div>
+
+                        <h3>Physical Symptoms</h3>
+                        <div class="form-group">
+                            <label>Lump Present:</label>
+                            <select name="lumpPresent">
+                                <option value="no">No</option>
+                                <option value="yes">Yes</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Nipple Discharge:</label>
+                            <select name="nippleDischarge">
+                                <option value="no">No</option>
+                                <option value="yes">Yes</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Skin Changes:</label>
+                            <select name="skinChanges">
+                                <option value="no">No</option>
+                                <option value="yes">Yes</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Breast Pain:</label>
+                            <select name="breastPain">
+                                <option value="no">No</option>
+                                <option value="yes">Yes</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Swelling in Armpit or Near Collarbone:</label>
+                            <select name="armpitSwelling">
+                                <option value="no">No</option>
+                                <option value="yes">Yes</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Sudden Asymmetry (Breast Size/Shape Changes):</label>
+                            <select name="asymmetry">
+                                <option value="no">No</option>
+                                <option value="yes">Yes</option>
+                            </select>
+                        </div>
+
+                        <h3>Medical History</h3>
+                        <div class="form-group">
+                            <label>Family History of Breast Cancer:</label>
+                            <select name="familyHistory">
+                                <option value="no">No</option>
+                                <option value="yes">Yes</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Previous Breast Conditions:</label>
+                            <select name="previousConditions">
+                                <option value="no">No</option>
+                                <option value="yes">Yes</option>
+                            </select>
+                        </div>
+
+                        <button type="submit" class="btn-primary">Get Prediction</button>
+                    </form>
+                </div>
+
+                <!-- Technical Medical Form -->
+                <div id="technicalTab" class="tab-content">
+                    <form id="technicalForm">
+                        <h3>Medical Measurements</h3>
+                        <div class="form-group">
+                            <label>Radius Mean:</label>
+                            <input type="number" step="0.01" name="radiusMean" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Texture Mean:</label>
+                            <input type="number" step="0.01" name="textureMean" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Perimeter Mean:</label>
+                            <input type="number" step="0.01" name="perimeterMean" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Area Mean:</label>
+                            <input type="number" step="0.01" name="areaMean" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Smoothness Mean:</label>
+                            <input type="number" step="0.0001" name="smoothnessMean" required>
+                        </div>
+                        <div class="form-group">
+                            <label>Compactness Mean:</label>
+                            <input type="number" step="0.0001" name="compactnessMean" required>
+                        </div>
+
+                        <button type="submit" class="btn-primary">Get Prediction</button>
+                    </form>
+                </div>
+
+                <!-- Prediction Result -->
+                <div id="predictionResult" class="result-box" style="display: none;">
+                    <h3>Prediction Result</h3>
+                    <div id="resultContent"></div>
+                </div>
+            </div>
+
+            <!-- AI Assistance Content -->
+            <div id="aiAssistanceContent" class="content-section">
+                <h2>AI Assistance</h2>
+                <div class="chat-container">
+                    <div id="chatMessages" class="chat-messages"></div>
+                    <form id="chatForm" class="chat-input">
+                        <input type="text" id="chatQuestion" placeholder="Ask a question about breast cancer..." required>
+                        <button type="submit">Send</button>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Educational Resources Content -->
+            <div id="educationalContent" class="content-section">
+                <h2>Educational Resources</h2>
+                <div id="resourcesList" class="resources-grid"></div>
+            </div>
+
+            <!-- Prediction History Content -->
+            <div id="historyContent" class="content-section">
+                <h2>Prediction History</h2>
+                <div id="historyList" class="history-list"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>

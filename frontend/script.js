@@ -1,71 +1,20 @@
-// Production API URL
 const API_URL = 'https://breast-cancer-prediction-z4zt.onrender.com/api';
-let currentUser = null;
-let authToken = null;
+let authToken = localStorage.getItem('authToken');
 
-// Check if user is already logged in
 document.addEventListener('DOMContentLoaded', () => {
-    authToken = localStorage.getItem('authToken');
     if (authToken) {
-        checkAuth();
+        showDashboard();
     }
 });
 
-// Helper function to make authenticated requests
-async function fetchWithAuth(url, options = {}) {
-    if (authToken) {
-        options.headers = {
-            ...options.headers,
-            'Authorization': `Bearer ${authToken}`,
-            'Content-Type': 'application/json'
-        };
-    }
-    return fetch(url, options);
+function showDashboard() {
+    const userName = localStorage.getItem('userName') || 'User';
+    document.getElementById('loginPage').classList.remove('active');
+    document.getElementById('registerPage').classList.remove('active');
+    document.getElementById('dashboardPage').classList.add('active');
+    document.getElementById('userName').textContent = userName;
 }
 
-// Check authentication status
-async function checkAuth() {
-    try {
-        const response = await fetchWithAuth(`${API_URL}/check-auth`);
-        
-        if (response.ok) {
-            const data = await response.json();
-            currentUser = data.user;
-            document.getElementById('userName').textContent = data.user.name;
-            document.getElementById('loginPage').classList.remove('active');
-            document.getElementById('dashboardPage').classList.add('active');
-            loadDashboard();
-        } else {
-            localStorage.removeItem('authToken');
-            authToken = null;
-        }
-    } catch (error) {
-        console.error('Auth check failed:', error);
-        localStorage.removeItem('authToken');
-        authToken = null;
-    }
-}
-
-// Page Navigation
-function showPage(pageName) {
-    document.querySelectorAll('.content-section').forEach(section => {
-        section.classList.remove('active');
-    });
-    document.querySelectorAll('.nav-item').forEach(item => {
-        item.classList.remove('active');
-    });
-    
-    document.getElementById(`${pageName}Content`).classList.add('active');
-    document.querySelector(`[data-page="${pageName}"]`).classList.add('active');
-    
-    if (pageName === 'educational') {
-        loadEducationalResources();
-    } else if (pageName === 'history') {
-        loadPredictionHistory();
-    }
-}
-
-// Authentication
 document.getElementById('showRegister').addEventListener('click', (e) => {
     e.preventDefault();
     document.getElementById('loginPage').classList.remove('active');
@@ -124,11 +73,8 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
         if (response.ok) {
             authToken = data.token;
             localStorage.setItem('authToken', authToken);
-            currentUser = data.user;
-            document.getElementById('userName').textContent = data.user.name;
-            document.getElementById('loginPage').classList.remove('active');
-            document.getElementById('dashboardPage').classList.add('active');
-            loadDashboard();
+            localStorage.setItem('userName', data.user.name);
+            showDashboard();
         } else {
             alert(data.error || 'Login failed');
         }
@@ -139,13 +85,30 @@ document.getElementById('loginForm').addEventListener('submit', async (e) => {
 
 document.getElementById('logoutBtn').addEventListener('click', () => {
     authToken = null;
-    currentUser = null;
     localStorage.removeItem('authToken');
+    localStorage.removeItem('userName');
     document.getElementById('dashboardPage').classList.remove('active');
     document.getElementById('loginPage').classList.add('active');
 });
 
-// Navigation
+function showPage(pageName) {
+    document.querySelectorAll('.content-section').forEach(section => {
+        section.classList.remove('active');
+    });
+    document.querySelectorAll('.nav-item').forEach(item => {
+        item.classList.remove('active');
+    });
+    
+    document.getElementById(`${pageName}Content`).classList.add('active');
+    document.querySelector(`[data-page="${pageName}"]`).classList.add('active');
+    
+    if (pageName === 'educational') {
+        loadEducationalResources();
+    } else if (pageName === 'history') {
+        loadPredictionHistory();
+    }
+}
+
 document.querySelectorAll('.nav-item').forEach(item => {
     item.addEventListener('click', (e) => {
         e.preventDefault();
@@ -154,7 +117,6 @@ document.querySelectorAll('.nav-item').forEach(item => {
     });
 });
 
-// Prediction Tabs
 document.querySelectorAll('.tab-btn').forEach(btn => {
     btn.addEventListener('click', () => {
         const tab = btn.getAttribute('data-tab');
@@ -167,7 +129,6 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
     });
 });
 
-// Symptom-Based Prediction
 document.getElementById('symptomForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     
@@ -175,8 +136,12 @@ document.getElementById('symptomForm').addEventListener('submit', async (e) => {
     const data = Object.fromEntries(formData);
     
     try {
-        const response = await fetchWithAuth(`${API_URL}/predict/symptom-based`, {
+        const response = await fetch(`${API_URL}/predict/symptom-based`, {
             method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${authToken}`
+            },
             body: JSON.stringify(data)
         });
         
@@ -192,7 +157,6 @@ document.getElementById('symptomForm').addEventListener('submit', async (e) => {
     }
 });
 
-// Technical Prediction
 document.getElementById('technicalForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     
@@ -200,8 +164,12 @@ document.getElementById('technicalForm').addEventListener('submit', async (e) =>
     const data = Object.fromEntries(formData);
     
     try {
-        const response = await fetchWithAuth(`${API_URL}/predict/technical`, {
+        const response = await fetch(`${API_URL}/predict/technical`, {
             method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${authToken}`
+            },
             body: JSON.stringify(data)
         });
         
@@ -236,7 +204,7 @@ function displayPredictionResult(result) {
             </div>
             <div style="padding: 15px; background: #fff3cd; border-radius: 5px; border-left: 4px solid #ffc107; margin-bottom: 20px;">
                 <p style="color: #856404; margin: 0;">
-                    <strong>Important:</strong> This is a preliminary assessment. Please consult with a healthcare professional for proper diagnosis and treatment.
+                    <strong>Important:</strong> This is a preliminary assessment. Please consult with a healthcare professional.
                 </p>
             </div>
         `;
@@ -258,17 +226,16 @@ function displayPredictionResult(result) {
             </div>
             <div style="padding: 15px; background: #fff3cd; border-radius: 5px; border-left: 4px solid #ffc107; margin-bottom: 20px;">
                 <p style="color: #856404; margin: 0;">
-                    <strong>Important:</strong> This prediction is based on medical measurements. Always consult with an oncologist for proper diagnosis.
+                    <strong>Important:</strong> Always consult with an oncologist for proper diagnosis.
                 </p>
             </div>
         `;
     }
     
-    // Add prevention recommendations
     if (result.preventions && result.preventions.length > 0) {
         html += `
             <div style="margin-top: 30px;">
-                <h4 style="color: #667eea; margin-bottom: 15px;">📋 Personalized Prevention & Action Plan</h4>
+                <h4 style="color: #667eea; margin-bottom: 15px;">📋 Prevention & Action Plan</h4>
                 <div style="display: grid; gap: 15px;">
         `;
         
@@ -308,14 +275,12 @@ function displayPredictionResult(result) {
     resultBox.scrollIntoView({ behavior: 'smooth' });
 }
 
-// AI Assistance
 document.getElementById('chatForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     
     const question = document.getElementById('chatQuestion').value;
     const chatMessages = document.getElementById('chatMessages');
     
-    // Add user message
     const userMsg = document.createElement('div');
     userMsg.className = 'message user';
     userMsg.textContent = question;
@@ -324,14 +289,17 @@ document.getElementById('chatForm').addEventListener('submit', async (e) => {
     document.getElementById('chatQuestion').value = '';
     
     try {
-        const response = await fetchWithAuth(`${API_URL}/ai-assistance`, {
+        const response = await fetch(`${API_URL}/ai-assistance`, {
             method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${authToken}`
+            },
             body: JSON.stringify({ question })
         });
         
         const data = await response.json();
         
-        // Add AI response
         const aiMsg = document.createElement('div');
         aiMsg.className = 'message ai';
         aiMsg.textContent = data.response;
@@ -343,7 +311,6 @@ document.getElementById('chatForm').addEventListener('submit', async (e) => {
     }
 });
 
-// Educational Resources
 async function loadEducationalResources() {
     try {
         const response = await fetch(`${API_URL}/educational-resources`);
@@ -363,10 +330,13 @@ async function loadEducationalResources() {
     }
 }
 
-// Prediction History
 async function loadPredictionHistory() {
     try {
-        const response = await fetchWithAuth(`${API_URL}/prediction-history`);
+        const response = await fetch(`${API_URL}/prediction-history`, {
+            headers: {
+                'Authorization': `Bearer ${authToken}`
+            }
+        });
         
         const history = await response.json();
         const historyList = document.getElementById('historyList');
@@ -389,24 +359,5 @@ async function loadPredictionHistory() {
         `).join('');
     } catch (error) {
         console.error('Error loading history:', error);
-    }
-}
-
-// Dashboard
-async function loadDashboard() {
-    try {
-        const response = await fetchWithAuth(`${API_URL}/prediction-history`);
-        
-        const history = await response.json();
-        
-        document.getElementById('totalPredictions').textContent = history.length;
-        
-        if (history.length > 0) {
-            const last = history[history.length - 1];
-            document.getElementById('lastPrediction').textContent = 
-                new Date(last.timestamp).toLocaleDateString();
-        }
-    } catch (error) {
-        console.error('Error loading dashboard:', error);
     }
 }

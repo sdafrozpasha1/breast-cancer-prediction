@@ -1,14 +1,27 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
+from flask_bcrypt import Bcrypt
+import jwt
 import pickle
 import numpy as np
-from datetime import datetime
+from datetime import datetime, timedelta
 import os
+from functools import wraps
 
 app = Flask(__name__)
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'breast-cancer-jwt-secret-2024')
 
-# Simple CORS - allow all origins
-CORS(app, origins=['*'])
+# CORS configuration
+CORS(app, 
+     origins=['https://spiffy-malabi-3967dc.netlify.app', 'http://localhost:8000'],
+     allow_headers=['Content-Type', 'Authorization'],
+     methods=['GET', 'POST', 'OPTIONS'])
+
+bcrypt = Bcrypt(app)
+
+# In-memory storage (use database in production)
+users_db = {}
+predictions_db = {}
 
 # Load ML model
 try:
@@ -18,16 +31,121 @@ except:
     model = None
     print("Warning: Model not loaded")
 
+# JWT token decorator
+def token_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        token = request.headers.get('Authorization')
+        
+        if not token:
+            return jsonify({'error': 'Token is missing'}), 401
+        
+        try:
+            if token.startswith('Bearer '):
+                token = token[7:]
+            
+            data = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
+            current_user_email = data['email']
+            
+            if current_user_email not in users_db:
+                return jsonify({'error': 'User not found'}), 401
+                
+        except jwt.ExpiredSignatureError:
+            return jsonify({'error': 'Token has expired'}), 401
+        except jwt.InvalidTokenError:
+            return jsonify({'error': 'Invalid token'}), 401
+        
+        return f(current_user_email, *args, **kwargs)
+    
+    return decorated
+
 @app.route('/')
 def home():
     return jsonify({'message': 'Breast Cancer Prediction API', 'status': 'running'})
 
-@app.route('/api/predict/symptom-based', methods=['POST'])
-def predict_symptom_based():
+# Authentication Routes
+@app.route('/api/register', methods=['POST', 'OPTIONS'])
+def register():
+    if request.method == 'OPTIONS':
+        return '', 204
+    
+    try:
+        data = request.json
+        email = data.get('email')
+        password = data.get('password')
+        name = data.get('name')
+        
+        if not email or not password or not name:
+            return jsonify({'error': 'All fields required'}), 400
+        
+        if email in users_db:
+            return jsonify({'error': 'User already exists'}), 400
+        
+        hashed_password = bcrypt.generate_password_hash(password).decode('utf-8')
+        users_db[email] = {
+            'name': name,
+            'email': email,
+            'password': hashed_password,
+            'created_at': datetime.now().isoformat()
+        }
+        
+        return jsonify({'message': 'Registration successful'}), 201
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/login', methods=['POST', 'OPTIONS'])
+def login():
+    if request.method == 'OPTIONS':
+        return '', 204
+    
+    try:
+        data = request.json
+        email = data.get('email')
+        password = data.get('password')
+        
+        if not email or not password:
+            return jsonify({'error': 'Email and password required'}), 400
+        
+        user = users_db.get(email)
+        if not user or not bcrypt.check_password_hash(user['password'], password):
+            return jsonify({'error': 'Invalid credentials'}), 401
+        
+        # Generate JWT token
+        token = jwt.encode({
+            'email': email,
+            'exp': datetime.utcnow() + timedelta(days=7)
+        }, app.config['SECRET_KEY'], algorithm='HS256')
+        
+        return jsonify({
+            'message': 'Login successful',
+            'token': token,
+            'user': {'name': user['name'], 'email': user['email']}
+        }), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/check-auth', methods=['GET', 'OPTIONS'])
+@token_required
+def check_auth(current_user_email):
+    if request.method == 'OPTIONS':
+        return '', 204
+    
+    user = users_db.get(current_user_email)
+    return jsonify({
+        'authenticated': True,
+        'user': {'name': user['name'], 'email': user['email']}
+    }), 200
+
+# Prediction Routes
+@app.route('/api/predict/symptom-based', methods=['POST', 'OPTIONS'])
+@token_required
+def predict_symptom_based(current_user_email):
+    if request.method == 'OPTIONS':
+        return '', 204
+    
     try:
         data = request.json
         
-        # Extract features
         age = int(data.get('age', 0))
         family_history = 1 if data.get('familyHistory') == 'yes' else 0
         previous_conditions = 1 if data.get('previousConditions') == 'yes' else 0
@@ -38,7 +156,6 @@ def predict_symptom_based():
         armpit_swelling = 1 if data.get('armpitSwelling') == 'yes' else 0
         asymmetry = 1 if data.get('asymmetry') == 'yes' else 0
         
-        # Risk calculation
         risk_score = 0
         risk_score += age * 0.5 if age > 50 else age * 0.2
         risk_score += family_history * 20
@@ -52,7 +169,6 @@ def predict_symptom_based():
         
         risk_percentage = min(risk_score, 100)
         
-        # Generate preventions
         preventions = []
         
         if age > 40:
@@ -84,7 +200,7 @@ def predict_symptom_based():
                 'category': 'Immediate Action',
                 'recommendation': 'Schedule clinical breast exam immediately',
                 'priority': 'Urgent',
-                'details': 'Any new lump should be evaluated by a healthcare provider as soon as possible.'
+                'details': 'Any new lump should be evaluated by a healthcare provider.'
             })
         
         if nipple_discharge:
@@ -108,7 +224,7 @@ def predict_symptom_based():
                 'category': 'Immediate Action',
                 'recommendation': 'Evaluate lymph node swelling immediately',
                 'priority': 'Urgent',
-                'details': 'Swelling in armpit or near collarbone may indicate lymph node involvement and requires urgent medical attention.'
+                'details': 'Swelling in armpit or near collarbone may indicate lymph node involvement.'
             })
         
         if asymmetry:
@@ -116,10 +232,9 @@ def predict_symptom_based():
                 'category': 'Medical Evaluation',
                 'recommendation': 'Assess sudden breast asymmetry',
                 'priority': 'High',
-                'details': 'Sudden changes in breast size or shape should be evaluated by a healthcare provider.'
+                'details': 'Sudden changes in breast size or shape should be evaluated.'
             })
         
-        # General preventions
         preventions.extend([
             {
                 'category': 'Lifestyle',
@@ -137,7 +252,7 @@ def predict_symptom_based():
                 'category': 'Lifestyle',
                 'recommendation': 'Limit alcohol consumption',
                 'priority': 'Medium',
-                'details': 'Even small amounts of alcohol can increase risk. Limit to 1 drink per day or less.'
+                'details': 'Even small amounts of alcohol can increase risk.'
             },
             {
                 'category': 'Diet',
@@ -158,14 +273,14 @@ def predict_symptom_based():
                 'category': 'Urgent',
                 'recommendation': 'Schedule comprehensive medical evaluation',
                 'priority': 'Urgent',
-                'details': 'High risk requires immediate medical attention and comprehensive screening.'
+                'details': 'High risk requires immediate medical attention.'
             })
         elif risk_percentage > 30:
             preventions.insert(0, {
                 'category': 'Follow-up',
                 'recommendation': 'Consult healthcare provider within 2 weeks',
                 'priority': 'High',
-                'details': 'Moderate risk warrants professional evaluation and personalized screening plan.'
+                'details': 'Moderate risk warrants professional evaluation.'
             })
         
         prediction = {
@@ -176,17 +291,24 @@ def predict_symptom_based():
             'timestamp': datetime.now().isoformat()
         }
         
+        if current_user_email not in predictions_db:
+            predictions_db[current_user_email] = []
+        predictions_db[current_user_email].append(prediction)
+        
         return jsonify(prediction)
         
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-@app.route('/api/predict/technical', methods=['POST'])
-def predict_technical():
+@app.route('/api/predict/technical', methods=['POST', 'OPTIONS'])
+@token_required
+def predict_technical(current_user_email):
+    if request.method == 'OPTIONS':
+        return '', 204
+    
     try:
         data = request.json
         
-        # Extract features
         features = [
             float(data.get('radiusMean', 0)),
             float(data.get('textureMean', 0)),
@@ -196,24 +318,19 @@ def predict_technical():
             float(data.get('compactnessMean', 0))
         ]
         
-        # Use ML model if available
         if model:
             try:
-                # Pad features to match model input
                 while len(features) < 30:
                     features.append(0)
                 
                 prediction_result = model.predict([features])[0]
                 probability = model.predict_proba([features])[0]
-                
                 malignant_prob = probability[1] * 100 if len(probability) > 1 else 50
             except:
                 malignant_prob = 50
         else:
-            # Fallback calculation
             malignant_prob = min((sum(features) / len(features)) * 5, 100)
         
-        # Generate preventions
         preventions = []
         
         if malignant_prob > 50:
@@ -222,58 +339,22 @@ def predict_technical():
                     'category': 'Urgent',
                     'recommendation': 'Consult oncologist immediately',
                     'priority': 'Urgent',
-                    'details': 'High malignancy probability requires immediate specialist consultation.'
+                    'details': 'High malignancy probability requires specialist consultation.'
                 },
                 {
                     'category': 'Diagnostic',
                     'recommendation': 'Schedule biopsy and additional imaging',
                     'priority': 'Urgent',
-                    'details': 'Confirmatory tests are essential for accurate diagnosis and treatment planning.'
-                },
-                {
-                    'category': 'Support',
-                    'recommendation': 'Consider genetic counseling',
-                    'priority': 'High',
-                    'details': 'Understanding genetic factors can guide treatment and family screening.'
+                    'details': 'Confirmatory tests are essential for accurate diagnosis.'
                 }
             ])
         else:
-            preventions.extend([
-                {
-                    'category': 'Follow-up',
-                    'recommendation': 'Schedule follow-up in 6 months',
-                    'priority': 'Medium',
-                    'details': 'Even benign findings should be monitored regularly.'
-                },
-                {
-                    'category': 'Screening',
-                    'recommendation': 'Continue regular mammograms',
-                    'priority': 'Medium',
-                    'details': 'Maintain routine screening schedule as recommended by your doctor.'
-                }
-            ])
-        
-        # General preventions
-        preventions.extend([
-            {
-                'category': 'Lifestyle',
-                'recommendation': 'Maintain healthy lifestyle',
+            preventions.append({
+                'category': 'Follow-up',
+                'recommendation': 'Schedule follow-up in 6 months',
                 'priority': 'Medium',
-                'details': 'Regular exercise, healthy diet, and limited alcohol reduce cancer risk.'
-            },
-            {
-                'category': 'Monitoring',
-                'recommendation': 'Track any changes in breast tissue',
-                'priority': 'Medium',
-                'details': 'Report any new lumps, pain, or changes to your healthcare provider.'
-            },
-            {
-                'category': 'Education',
-                'recommendation': 'Learn about breast health',
-                'priority': 'Low',
-                'details': 'Understanding risk factors and symptoms empowers early detection.'
-            }
-        ])
+                'details': 'Regular monitoring is important even for benign findings.'
+            })
         
         prediction = {
             'type': 'technical',
@@ -284,26 +365,43 @@ def predict_technical():
             'timestamp': datetime.now().isoformat()
         }
         
+        if current_user_email not in predictions_db:
+            predictions_db[current_user_email] = []
+        predictions_db[current_user_email].append(prediction)
+        
         return jsonify(prediction)
         
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-@app.route('/api/ai-assistance', methods=['POST'])
-def ai_assistance():
+@app.route('/api/prediction-history', methods=['GET', 'OPTIONS'])
+@token_required
+def get_prediction_history(current_user_email):
+    if request.method == 'OPTIONS':
+        return '', 204
+    
+    history = predictions_db.get(current_user_email, [])
+    return jsonify(history)
+
+@app.route('/api/ai-assistance', methods=['POST', 'OPTIONS'])
+@token_required
+def ai_assistance(current_user_email):
+    if request.method == 'OPTIONS':
+        return '', 204
+    
     try:
         data = request.json
         question = data.get('question', '').lower()
         
         responses = {
-            'symptom': 'Common breast cancer symptoms include lumps, nipple discharge, skin changes, and breast pain. Consult a doctor if you notice any changes.',
-            'prevention': 'Prevention includes regular screenings, healthy lifestyle, limiting alcohol, maintaining healthy weight, and being physically active.',
-            'screening': 'Mammograms are recommended annually for women over 40. Self-exams and clinical exams are also important.',
-            'treatment': 'Treatment options include surgery, radiation, chemotherapy, hormone therapy, and targeted therapy. Treatment depends on cancer stage and type.',
-            'risk': 'Risk factors include age, family history, genetic mutations (BRCA1/BRCA2), previous breast conditions, and lifestyle factors.'
+            'symptom': 'Common breast cancer symptoms include lumps, nipple discharge, skin changes, and breast pain.',
+            'prevention': 'Prevention includes regular screenings, healthy lifestyle, limiting alcohol, and maintaining healthy weight.',
+            'screening': 'Mammograms are recommended annually for women over 40.',
+            'treatment': 'Treatment options include surgery, radiation, chemotherapy, hormone therapy, and targeted therapy.',
+            'risk': 'Risk factors include age, family history, genetic mutations, and lifestyle factors.'
         }
         
-        response = 'I can help with questions about breast cancer symptoms, prevention, screening, treatment, and risk factors. Please ask a specific question.'
+        response = 'I can help with questions about breast cancer symptoms, prevention, screening, treatment, and risk factors.'
         
         for key, value in responses.items():
             if key in question:
@@ -315,8 +413,11 @@ def ai_assistance():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-@app.route('/api/educational-resources', methods=['GET'])
+@app.route('/api/educational-resources', methods=['GET', 'OPTIONS'])
 def get_educational_resources():
+    if request.method == 'OPTIONS':
+        return '', 204
+    
     resources = [
         {
             'id': 1,

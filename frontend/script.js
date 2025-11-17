@@ -1,3 +1,5 @@
+// Updated for deployment
+
 const API_URL = 'https://breast-cancer-prediction-z4zt.onrender.com/api';
 let authToken = localStorage.getItem('authToken');
 
@@ -361,3 +363,4 @@ async function loadPredictionHistory() {
         console.error('Error loading history:', error);
     }
 }
+

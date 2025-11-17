@@ -1,19 +1,50 @@
 // Production API URL
 const API_URL = 'https://breast-cancer-prediction-z4zt.onrender.com/api';
+let currentUser = null;
+let authToken = null;
 
-// Initialize app - skip login and go straight to dashboard
+// Check if user is already logged in
 document.addEventListener('DOMContentLoaded', () => {
-    // Hide login/register pages
-    document.getElementById('loginPage').style.display = 'none';
-    document.getElementById('registerPage').style.display = 'none';
-    
-    // Show dashboard immediately
-    document.getElementById('dashboardPage').classList.add('active');
-    document.getElementById('userName').textContent = 'Guest User';
-    
-    // Load initial content
-    loadDashboard();
+    authToken = localStorage.getItem('authToken');
+    if (authToken) {
+        checkAuth();
+    }
 });
+
+// Helper function to make authenticated requests
+async function fetchWithAuth(url, options = {}) {
+    if (authToken) {
+        options.headers = {
+            ...options.headers,
+            'Authorization': `Bearer ${authToken}`,
+            'Content-Type': 'application/json'
+        };
+    }
+    return fetch(url, options);
+}
+
+// Check authentication status
+async function checkAuth() {
+    try {
+        const response = await fetchWithAuth(`${API_URL}/check-auth`);
+        
+        if (response.ok) {
+            const data = await response.json();
+            currentUser = data.user;
+            document.getElementById('userName').textContent = data.user.name;
+            document.getElementById('loginPage').classList.remove('active');
+            document.getElementById('dashboardPage').classList.add('active');
+            loadDashboard();
+        } else {
+            localStorage.removeItem('authToken');
+            authToken = null;
+        }
+    } catch (error) {
+        console.error('Auth check failed:', error);
+        localStorage.removeItem('authToken');
+        authToken = null;
+    }
+}
 
 // Page Navigation
 function showPage(pageName) {
@@ -29,8 +60,90 @@ function showPage(pageName) {
     
     if (pageName === 'educational') {
         loadEducationalResources();
+    } else if (pageName === 'history') {
+        loadPredictionHistory();
     }
 }
+
+// Authentication
+document.getElementById('showRegister').addEventListener('click', (e) => {
+    e.preventDefault();
+    document.getElementById('loginPage').classList.remove('active');
+    document.getElementById('registerPage').classList.add('active');
+});
+
+document.getElementById('showLogin').addEventListener('click', (e) => {
+    e.preventDefault();
+    document.getElementById('registerPage').classList.remove('active');
+    document.getElementById('loginPage').classList.add('active');
+});
+
+document.getElementById('registerForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    
+    const name = document.getElementById('registerName').value;
+    const email = document.getElementById('registerEmail').value;
+    const password = document.getElementById('registerPassword').value;
+    
+    try {
+        const response = await fetch(`${API_URL}/register`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, email, password })
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok) {
+            alert('Registration successful! Please login.');
+            document.getElementById('registerPage').classList.remove('active');
+            document.getElementById('loginPage').classList.add('active');
+        } else {
+            alert(data.error || 'Registration failed');
+        }
+    } catch (error) {
+        alert('Error connecting to server');
+    }
+});
+
+document.getElementById('loginForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    
+    const email = document.getElementById('loginEmail').value;
+    const password = document.getElementById('loginPassword').value;
+    
+    try {
+        const response = await fetch(`${API_URL}/login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, password })
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok) {
+            authToken = data.token;
+            localStorage.setItem('authToken', authToken);
+            currentUser = data.user;
+            document.getElementById('userName').textContent = data.user.name;
+            document.getElementById('loginPage').classList.remove('active');
+            document.getElementById('dashboardPage').classList.add('active');
+            loadDashboard();
+        } else {
+            alert(data.error || 'Login failed');
+        }
+    } catch (error) {
+        alert('Error connecting to server');
+    }
+});
+
+document.getElementById('logoutBtn').addEventListener('click', () => {
+    authToken = null;
+    currentUser = null;
+    localStorage.removeItem('authToken');
+    document.getElementById('dashboardPage').classList.remove('active');
+    document.getElementById('loginPage').classList.add('active');
+});
 
 // Navigation
 document.querySelectorAll('.nav-item').forEach(item => {
@@ -62,9 +175,8 @@ document.getElementById('symptomForm').addEventListener('submit', async (e) => {
     const data = Object.fromEntries(formData);
     
     try {
-        const response = await fetch(`${API_URL}/predict/symptom-based`, {
+        const response = await fetchWithAuth(`${API_URL}/predict/symptom-based`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(data)
         });
         
@@ -76,8 +188,7 @@ document.getElementById('symptomForm').addEventListener('submit', async (e) => {
             alert(result.error || 'Prediction failed');
         }
     } catch (error) {
-        console.error('Error:', error);
-        alert('Error connecting to server. Please try again.');
+        alert('Error connecting to server');
     }
 });
 
@@ -89,9 +200,8 @@ document.getElementById('technicalForm').addEventListener('submit', async (e) =>
     const data = Object.fromEntries(formData);
     
     try {
-        const response = await fetch(`${API_URL}/predict/technical`, {
+        const response = await fetchWithAuth(`${API_URL}/predict/technical`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(data)
         });
         
@@ -103,8 +213,7 @@ document.getElementById('technicalForm').addEventListener('submit', async (e) =>
             alert(result.error || 'Prediction failed');
         }
     } catch (error) {
-        console.error('Error:', error);
-        alert('Error connecting to server. Please try again.');
+        alert('Error connecting to server');
     }
 });
 
@@ -215,9 +324,8 @@ document.getElementById('chatForm').addEventListener('submit', async (e) => {
     document.getElementById('chatQuestion').value = '';
     
     try {
-        const response = await fetch(`${API_URL}/ai-assistance`, {
+        const response = await fetchWithAuth(`${API_URL}/ai-assistance`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ question })
         });
         
@@ -231,8 +339,7 @@ document.getElementById('chatForm').addEventListener('submit', async (e) => {
         
         chatMessages.scrollTop = chatMessages.scrollHeight;
     } catch (error) {
-        console.error('Error:', error);
-        alert('Error connecting to server. Please try again.');
+        alert('Error connecting to server');
     }
 });
 
@@ -256,12 +363,50 @@ async function loadEducationalResources() {
     }
 }
 
-// Dashboard
-function loadDashboard() {
-    // Simple dashboard without history
-    document.getElementById('totalPredictions').textContent = '0';
-    document.getElementById('lastPrediction').textContent = 'No predictions yet';
+// Prediction History
+async function loadPredictionHistory() {
+    try {
+        const response = await fetchWithAuth(`${API_URL}/prediction-history`);
+        
+        const history = await response.json();
+        const historyList = document.getElementById('historyList');
+        
+        if (history.length === 0) {
+            historyList.innerHTML = '<p>No predictions yet.</p>';
+            return;
+        }
+        
+        historyList.innerHTML = history.reverse().map(item => `
+            <div class="history-item">
+                <div class="date">${new Date(item.timestamp).toLocaleString()}</div>
+                <span class="type">${item.type}</span>
+                <div class="result">
+                    ${item.type === 'symptom-based' 
+                        ? `${item.outcome} - ${item.risk_percentage}%` 
+                        : `${item.outcome} - ${item.malignant_probability}% malignant`}
+                </div>
+            </div>
+        `).join('');
+    } catch (error) {
+        console.error('Error loading history:', error);
+    }
 }
 
-// Hide logout button since no authentication
-document.getElementById('logoutBtn').style.display = 'none';
+// Dashboard
+async function loadDashboard() {
+    try {
+        const response = await fetchWithAuth(`${API_URL}/prediction-history`);
+        
+        const history = await response.json();
+        
+        document.getElementById('totalPredictions').textContent = history.length;
+        
+        if (history.length > 0) {
+            const last = history[history.length - 1];
+            document.getElementById('lastPrediction').textContent = 
+                new Date(last.timestamp).toLocaleDateString();
+        }
+    } catch (error) {
+        console.error('Error loading dashboard:', error);
+    }
+}

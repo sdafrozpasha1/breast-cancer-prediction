@@ -1,69 +1,30 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-from flask_bcrypt import Bcrypt
-import jwt
-import pickle
-import numpy as np
-from datetime import datetime, timedelta
+import hashlib
 import os
-from functools import wraps
+from datetime import datetime
+import secrets
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'breast-cancer-jwt-secret-2024')
 
-# CORS configuration
-CORS(app, 
-     origins=['https://spiffy-malabi-3967dc.netlify.app', 'http://localhost:8000'],
-     allow_headers=['Content-Type', 'Authorization'],
-     methods=['GET', 'POST', 'OPTIONS'])
+# Simple CORS - allow all
+CORS(app, origins=['*'])
 
-bcrypt = Bcrypt(app)
-
-# In-memory storage (use database in production)
+# Simple in-memory storage
 users_db = {}
+sessions_db = {}
 predictions_db = {}
 
-# Load ML model
-try:
-    with open('breast_cancer_model.pkl', 'rb') as f:
-        model = pickle.load(f)
-except:
-    model = None
-    print("Warning: Model not loaded")
+def hash_password(password):
+    return hashlib.sha256(password.encode()).hexdigest()
 
-# JWT token decorator
-def token_required(f):
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        token = request.headers.get('Authorization')
-        
-        if not token:
-            return jsonify({'error': 'Token is missing'}), 401
-        
-        try:
-            if token.startswith('Bearer '):
-                token = token[7:]
-            
-            data = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
-            current_user_email = data['email']
-            
-            if current_user_email not in users_db:
-                return jsonify({'error': 'User not found'}), 401
-                
-        except jwt.ExpiredSignatureError:
-            return jsonify({'error': 'Token has expired'}), 401
-        except jwt.InvalidTokenError:
-            return jsonify({'error': 'Invalid token'}), 401
-        
-        return f(current_user_email, *args, **kwargs)
-    
-    return decorated
+def generate_token():
+    return secrets.token_hex(32)
 
 @app.route('/')
 def home():
     return jsonify({'message': 'Breast Cancer Prediction API', 'status': 'running'})
 
-# Authentication Routes
 @app.route('/api/register', methods=['POST', 'OPTIONS'])
 def register():
     if request.method == 'OPTIONS':
@@ -81,11 +42,10 @@ def register():
         if email in users_db:
             return jsonify({'error': 'User already exists'}), 400
         
-        hashed_password = bcrypt.generate_password_hash(password).decode('utf-8')
         users_db[email] = {
             'name': name,
             'email': email,
-            'password': hashed_password,
+            'password': hash_password(password),
             'created_at': datetime.now().isoformat()
         }
         
@@ -107,14 +67,11 @@ def login():
             return jsonify({'error': 'Email and password required'}), 400
         
         user = users_db.get(email)
-        if not user or not bcrypt.check_password_hash(user['password'], password):
+        if not user or user['password'] != hash_password(password):
             return jsonify({'error': 'Invalid credentials'}), 401
         
-        # Generate JWT token
-        token = jwt.encode({
-            'email': email,
-            'exp': datetime.utcnow() + timedelta(days=7)
-        }, app.config['SECRET_KEY'], algorithm='HS256')
+        token = generate_token()
+        sessions_db[token] = email
         
         return jsonify({
             'message': 'Login successful',
@@ -124,24 +81,19 @@ def login():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-@app.route('/api/check-auth', methods=['GET', 'OPTIONS'])
-@token_required
-def check_auth(current_user_email):
+def verify_token(token):
+    return sessions_db.get(token)
+
+@app.route('/api/predict/symptom-based', methods=['POST', 'OPTIONS'])
+def predict_symptom_based():
     if request.method == 'OPTIONS':
         return '', 204
     
-    user = users_db.get(current_user_email)
-    return jsonify({
-        'authenticated': True,
-        'user': {'name': user['name'], 'email': user['email']}
-    }), 200
-
-# Prediction Routes
-@app.route('/api/predict/symptom-based', methods=['POST', 'OPTIONS'])
-@token_required
-def predict_symptom_based(current_user_email):
-    if request.method == 'OPTIONS':
-        return '', 204
+    token = request.headers.get('Authorization', '').replace('Bearer ', '')
+    user_email = verify_token(token)
+    
+    if not user_email:
+        return jsonify({'error': 'Unauthorized'}), 401
     
     try:
         data = request.json
@@ -176,7 +128,7 @@ def predict_symptom_based(current_user_email):
                 'category': 'Screening',
                 'recommendation': 'Schedule annual mammograms',
                 'priority': 'High',
-                'details': 'Women over 40 should have yearly mammograms for early detection.'
+                'details': 'Women over 40 should have yearly mammograms.'
             })
         
         if family_history:
@@ -185,13 +137,13 @@ def predict_symptom_based(current_user_email):
                     'category': 'Genetic Testing',
                     'recommendation': 'Consider BRCA1/BRCA2 genetic testing',
                     'priority': 'High',
-                    'details': 'Family history increases risk. Genetic counseling can help assess inherited risk.'
+                    'details': 'Family history increases risk.'
                 },
                 {
                     'category': 'Screening',
-                    'recommendation': 'Start screening earlier (age 30-35)',
+                    'recommendation': 'Start screening earlier',
                     'priority': 'High',
-                    'details': 'With family history, earlier and more frequent screening is recommended.'
+                    'details': 'Earlier screening recommended.'
                 }
             ])
         
@@ -200,7 +152,7 @@ def predict_symptom_based(current_user_email):
                 'category': 'Immediate Action',
                 'recommendation': 'Schedule clinical breast exam immediately',
                 'priority': 'Urgent',
-                'details': 'Any new lump should be evaluated by a healthcare provider.'
+                'details': 'Any new lump should be evaluated.'
             })
         
         if nipple_discharge:
@@ -208,7 +160,7 @@ def predict_symptom_based(current_user_email):
                 'category': 'Medical Evaluation',
                 'recommendation': 'Consult doctor about nipple discharge',
                 'priority': 'High',
-                'details': 'Nipple discharge can indicate various conditions and should be evaluated.'
+                'details': 'Should be evaluated.'
             })
         
         if skin_changes:
@@ -216,15 +168,15 @@ def predict_symptom_based(current_user_email):
                 'category': 'Medical Evaluation',
                 'recommendation': 'Get skin changes examined',
                 'priority': 'High',
-                'details': 'Skin dimpling, redness, or texture changes should be evaluated promptly.'
+                'details': 'Should be evaluated promptly.'
             })
         
         if armpit_swelling:
             preventions.append({
                 'category': 'Immediate Action',
-                'recommendation': 'Evaluate lymph node swelling immediately',
+                'recommendation': 'Evaluate lymph node swelling',
                 'priority': 'Urgent',
-                'details': 'Swelling in armpit or near collarbone may indicate lymph node involvement.'
+                'details': 'May indicate lymph node involvement.'
             })
         
         if asymmetry:
@@ -232,7 +184,7 @@ def predict_symptom_based(current_user_email):
                 'category': 'Medical Evaluation',
                 'recommendation': 'Assess sudden breast asymmetry',
                 'priority': 'High',
-                'details': 'Sudden changes in breast size or shape should be evaluated.'
+                'details': 'Sudden changes should be evaluated.'
             })
         
         preventions.extend([
@@ -240,31 +192,19 @@ def predict_symptom_based(current_user_email):
                 'category': 'Lifestyle',
                 'recommendation': 'Maintain healthy weight',
                 'priority': 'Medium',
-                'details': 'Being overweight increases breast cancer risk, especially after menopause.'
+                'details': 'Reduces breast cancer risk.'
             },
             {
                 'category': 'Lifestyle',
-                'recommendation': 'Exercise regularly (150 min/week)',
+                'recommendation': 'Exercise regularly',
                 'priority': 'Medium',
-                'details': 'Regular physical activity can reduce breast cancer risk by 10-20%.'
+                'details': 'Can reduce risk by 10-20%.'
             },
             {
                 'category': 'Lifestyle',
-                'recommendation': 'Limit alcohol consumption',
+                'recommendation': 'Limit alcohol',
                 'priority': 'Medium',
-                'details': 'Even small amounts of alcohol can increase risk.'
-            },
-            {
-                'category': 'Diet',
-                'recommendation': 'Eat a healthy diet rich in fruits and vegetables',
-                'priority': 'Medium',
-                'details': 'A diet high in vegetables, fruits, and whole grains may help reduce risk.'
-            },
-            {
-                'category': 'Self-Care',
-                'recommendation': 'Perform monthly breast self-exams',
-                'priority': 'Medium',
-                'details': 'Know what\'s normal for you and report any changes to your doctor.'
+                'details': 'Alcohol increases risk.'
             }
         ])
         
@@ -273,14 +213,14 @@ def predict_symptom_based(current_user_email):
                 'category': 'Urgent',
                 'recommendation': 'Schedule comprehensive medical evaluation',
                 'priority': 'Urgent',
-                'details': 'High risk requires immediate medical attention.'
+                'details': 'High risk requires immediate attention.'
             })
         elif risk_percentage > 30:
             preventions.insert(0, {
                 'category': 'Follow-up',
-                'recommendation': 'Consult healthcare provider within 2 weeks',
+                'recommendation': 'Consult healthcare provider',
                 'priority': 'High',
-                'details': 'Moderate risk warrants professional evaluation.'
+                'details': 'Moderate risk warrants evaluation.'
             })
         
         prediction = {
@@ -291,9 +231,9 @@ def predict_symptom_based(current_user_email):
             'timestamp': datetime.now().isoformat()
         }
         
-        if current_user_email not in predictions_db:
-            predictions_db[current_user_email] = []
-        predictions_db[current_user_email].append(prediction)
+        if user_email not in predictions_db:
+            predictions_db[user_email] = []
+        predictions_db[user_email].append(prediction)
         
         return jsonify(prediction)
         
@@ -301,10 +241,15 @@ def predict_symptom_based(current_user_email):
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/predict/technical', methods=['POST', 'OPTIONS'])
-@token_required
-def predict_technical(current_user_email):
+def predict_technical():
     if request.method == 'OPTIONS':
         return '', 204
+    
+    token = request.headers.get('Authorization', '').replace('Bearer ', '')
+    user_email = verify_token(token)
+    
+    if not user_email:
+        return jsonify({'error': 'Unauthorized'}), 401
     
     try:
         data = request.json
@@ -318,18 +263,7 @@ def predict_technical(current_user_email):
             float(data.get('compactnessMean', 0))
         ]
         
-        if model:
-            try:
-                while len(features) < 30:
-                    features.append(0)
-                
-                prediction_result = model.predict([features])[0]
-                probability = model.predict_proba([features])[0]
-                malignant_prob = probability[1] * 100 if len(probability) > 1 else 50
-            except:
-                malignant_prob = 50
-        else:
-            malignant_prob = min((sum(features) / len(features)) * 5, 100)
+        malignant_prob = min((sum(features) / len(features)) * 5, 100)
         
         preventions = []
         
@@ -339,21 +273,21 @@ def predict_technical(current_user_email):
                     'category': 'Urgent',
                     'recommendation': 'Consult oncologist immediately',
                     'priority': 'Urgent',
-                    'details': 'High malignancy probability requires specialist consultation.'
+                    'details': 'High malignancy probability.'
                 },
                 {
                     'category': 'Diagnostic',
-                    'recommendation': 'Schedule biopsy and additional imaging',
+                    'recommendation': 'Schedule biopsy',
                     'priority': 'Urgent',
-                    'details': 'Confirmatory tests are essential for accurate diagnosis.'
+                    'details': 'Confirmatory tests essential.'
                 }
             ])
         else:
             preventions.append({
                 'category': 'Follow-up',
-                'recommendation': 'Schedule follow-up in 6 months',
+                'recommendation': 'Schedule follow-up',
                 'priority': 'Medium',
-                'details': 'Regular monitoring is important even for benign findings.'
+                'details': 'Regular monitoring important.'
             })
         
         prediction = {
@@ -365,9 +299,9 @@ def predict_technical(current_user_email):
             'timestamp': datetime.now().isoformat()
         }
         
-        if current_user_email not in predictions_db:
-            predictions_db[current_user_email] = []
-        predictions_db[current_user_email].append(prediction)
+        if user_email not in predictions_db:
+            predictions_db[user_email] = []
+        predictions_db[user_email].append(prediction)
         
         return jsonify(prediction)
         
@@ -375,33 +309,43 @@ def predict_technical(current_user_email):
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/prediction-history', methods=['GET', 'OPTIONS'])
-@token_required
-def get_prediction_history(current_user_email):
+def get_prediction_history():
     if request.method == 'OPTIONS':
         return '', 204
     
-    history = predictions_db.get(current_user_email, [])
+    token = request.headers.get('Authorization', '').replace('Bearer ', '')
+    user_email = verify_token(token)
+    
+    if not user_email:
+        return jsonify({'error': 'Unauthorized'}), 401
+    
+    history = predictions_db.get(user_email, [])
     return jsonify(history)
 
 @app.route('/api/ai-assistance', methods=['POST', 'OPTIONS'])
-@token_required
-def ai_assistance(current_user_email):
+def ai_assistance():
     if request.method == 'OPTIONS':
         return '', 204
+    
+    token = request.headers.get('Authorization', '').replace('Bearer ', '')
+    user_email = verify_token(token)
+    
+    if not user_email:
+        return jsonify({'error': 'Unauthorized'}), 401
     
     try:
         data = request.json
         question = data.get('question', '').lower()
         
         responses = {
-            'symptom': 'Common breast cancer symptoms include lumps, nipple discharge, skin changes, and breast pain.',
-            'prevention': 'Prevention includes regular screenings, healthy lifestyle, limiting alcohol, and maintaining healthy weight.',
-            'screening': 'Mammograms are recommended annually for women over 40.',
-            'treatment': 'Treatment options include surgery, radiation, chemotherapy, hormone therapy, and targeted therapy.',
-            'risk': 'Risk factors include age, family history, genetic mutations, and lifestyle factors.'
+            'symptom': 'Common symptoms include lumps, nipple discharge, skin changes, and breast pain.',
+            'prevention': 'Prevention includes regular screenings, healthy lifestyle, and limiting alcohol.',
+            'screening': 'Mammograms recommended annually for women over 40.',
+            'treatment': 'Treatment options include surgery, radiation, chemotherapy, and hormone therapy.',
+            'risk': 'Risk factors include age, family history, and genetic mutations.'
         }
         
-        response = 'I can help with questions about breast cancer symptoms, prevention, screening, treatment, and risk factors.'
+        response = 'I can help with questions about symptoms, prevention, screening, treatment, and risk factors.'
         
         for key, value in responses.items():
             if key in question:
@@ -422,31 +366,31 @@ def get_educational_resources():
         {
             'id': 1,
             'title': 'Understanding Breast Cancer',
-            'description': 'Learn about breast cancer types, stages, and how it develops.',
+            'description': 'Learn about breast cancer types and stages.',
             'category': 'basics'
         },
         {
             'id': 2,
             'title': 'Early Detection and Screening',
-            'description': 'Importance of mammograms, self-exams, and clinical examinations.',
+            'description': 'Importance of mammograms and self-exams.',
             'category': 'screening'
         },
         {
             'id': 3,
             'title': 'Risk Factors and Prevention',
-            'description': 'Understand risk factors and steps to reduce your risk.',
+            'description': 'Understand risk factors and prevention steps.',
             'category': 'prevention'
         },
         {
             'id': 4,
             'title': 'Treatment Options',
-            'description': 'Overview of surgery, chemotherapy, radiation, and other treatments.',
+            'description': 'Overview of treatment options.',
             'category': 'treatment'
         },
         {
             'id': 5,
             'title': 'Living with Breast Cancer',
-            'description': 'Support resources, lifestyle tips, and coping strategies.',
+            'description': 'Support resources and coping strategies.',
             'category': 'support'
         }
     ]
